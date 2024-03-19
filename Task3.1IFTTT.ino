@@ -13,6 +13,10 @@ WiFiClient client;
 char   HOST_NAME[] = "maker.ifttt.com";
 String PATH_NAME   = "/trigger/sunlight_sensed/with/key/lv8ZbcFFWAfx6Vwizyzw1"; // change your EVENT-NAME and YOUR-KEY
 String queryString = "?value1=57&value2=25";
+// IFTTT webhook details for turning the light off
+char HOST_NAME_OFF[] = "maker.ifttt.com";
+String PATH_NAME_OFF = "/trigger/sunlight_absent/with/key/lv8ZbcFFWAfx6Vwizyzw1";
+String queryStringOff = "?value1=57&value2=25";
 bool requestMade = false;
 
 
@@ -50,14 +54,17 @@ void loop() {
     Serial.println(lux); // Print the lux value
     Serial.print("");
     if (lux > 50) {
-      makeRequestON();
+      makeRequest(PATH_NAME, queryString);
+    }
+    if (lux < 50){
+      makeRequest(PATH_NAME_OFF, queryStringOff);
     }
   }
 }
 
-void makeRequestON() {
+void makeRequest(String path, String query ) {
   // Send HTTP request
-  client.println("GET " + PATH_NAME + queryString + " HTTP/1.1");
+  client.println("GET " + path + query + " HTTP/1.1");
   client.println("Host: " + String(HOST_NAME));
   client.println("Connection: close");
   client.println();
