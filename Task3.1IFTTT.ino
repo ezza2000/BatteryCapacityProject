@@ -13,11 +13,12 @@ WiFiClient client;
 char   HOST_NAME[] = "maker.ifttt.com";
 String PATH_NAME   = "/trigger/sunlight_sensed/with/key/lv8ZbcFFWAfx6Vwizyzw1"; // change your EVENT-NAME and YOUR-KEY
 String queryString = "?value1=57&value2=25";
-// IFTTT webhook details for turning the light off
-char HOST_NAME_OFF[] = "maker.ifttt.com";
 String PATH_NAME_OFF = "/trigger/sunlight_absent/with/key/lv8ZbcFFWAfx6Vwizyzw1";
 String queryStringOff = "?value1=57&value2=25";
 bool requestMade = false;
+unsigned long previousMillis = 0; // Variable to store the time since last check
+const long interval = 29000;      // Interval between checks in milliseconds
+const long duration = 60000;     // Total duration of the loop in milliseconds
 
 
 void setup() {
@@ -47,27 +48,55 @@ void setup() {
 }
 
 void loop() {
-  if (!requestMade) {
-    float lux = lightMeter.readLightLevel();
-    Serial.print("");
-    Serial.print("Lux: ");
-    Serial.println(lux); // Print the lux value
-    Serial.print("");
-    if (lux > 50) {
-      makeRequest(PATH_NAME, queryString);
+  unsigned long currentMillis = millis(); // Get the current time
+
+  // Check if 2 minutes have elapsed
+  if (currentMillis < duration) {
+    // Check if it's time to check sunlight
+    if (currentMillis - previousMillis >= interval) {
+      previousMillis = currentMillis;// Save the last time sunlight was checked
+      float lux = lightMeter.readLightLevel();
+      Serial.print("Lux: ");
+      Serial.println(lux); // Print the lux value
+
+      // Reset requestMade flag before making a new request
+      requestMade = false;
+
+      if (lux > 50 && !requestMade) {
+        makeRequest(PATH_NAME, queryString);
+        requestMade = true; // Set flag to indicate that a request has been made
+      }
+      if (lux < 50 && !requestMade){
+        makeRequest(PATH_NAME_OFF, queryStringOff);
+        requestMade = true; // Set flag to indicate that a request has been made
+      }
     }
-    if (lux < 50){
-      makeRequest(PATH_NAME_OFF, queryStringOff);
-    }
+  } else {
+    // End the loop after 2 minutes
+    Serial.println("Loop ended after 2 minutes");
+    while (true) {} // Infinite loop to halt the program
   }
 }
 
-void makeRequest(String path, String query ) {
+void makeRequest(String path, String query) {
   // Send HTTP request
-  client.println("GET " + path + query + " HTTP/1.1");
-  client.println("Host: " + String(HOST_NAME));
-  client.println("Connection: close");
-  client.println();
+  if (client.connect(HOST_NAME, 80)) {
+    Serial.println("Connected to server");
+    client.print("GET " + path + query + " HTTP/1.1\r\n");
+    client.print("Host: " + String(HOST_NAME) + "\r\n");
+    client.print("Connection: close\r\n\r\n");
+    unsigned long timeout = millis();
+    while (client.available() == 0) {
+      if (millis() - timeout > 5000) { // 5-second timeout
+        Serial.println("Timeout occurred while waiting for response");
+        client.stop();
+        return;
+      }
+    }
+  } else {
+    Serial.println("Connection to server failed");
+    return;
+  }
 
   // Read response from server
   while (client.connected()) {
@@ -81,8 +110,8 @@ void makeRequest(String path, String query ) {
   client.stop();
   Serial.println();
   Serial.println("Disconnected");
-  requestMade = true;
 }
+
     
 
 
