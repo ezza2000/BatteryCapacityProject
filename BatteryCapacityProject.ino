@@ -38,7 +38,6 @@ unsigned long startMillis = 0;
 unsigned long displayMinutes = 0;
 unsigned long displaySeconds = 0;
 
-float voltage = 4.2; // Initial voltage value
 unsigned long previousMillis = 0; // Store the last time the voltage was updated
 const long interval = 20000; // Interval at which to update ThingSpeak (20 secs)
 unsigned long previousDisplayMillis = 0; // Store the last time the display was updated
@@ -46,6 +45,13 @@ const long displayInterval = 1000; // Interval at which to update the display (1
 
 bool buttonPressed = false;
 float valPot; // Variable to store the analog value read
+float mAh = 0.0;
+float batteryVoltage = 0.0;
+float shuntRes = 1.0; // In Ohms – Shunt resistor resistance
+float voltRef = 4.71; // Reference voltage (probe your 5V pin)
+float current = 0.0;
+float shuntVolt = 0.0;
+float battLow = 3.0;
 
 void setup() 
 {
@@ -177,6 +183,13 @@ float readVoltage()
   return actualVolt;
 }
 
+float readCurrent()
+{
+  // Implement your current reading logic here
+  // For now, we return a dummy value
+  return 0.5; // Example current value in Amperes
+}
+
 float readPotent() 
 {
   valPot = analogRead(A1);
@@ -201,8 +214,8 @@ void updateThingSpeak()
     Serial.println("\nConnected.");
   }
 
-  voltage = readVoltage();
-  ThingSpeak.setField(1, voltage);
+  batteryVoltage = readVoltage();
+  ThingSpeak.setField(1, batteryVoltage);
   ThingSpeak.setStatus(myStatus);
   
   int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
@@ -216,6 +229,7 @@ void updateThingSpeak()
 
 void lcdDisplay()
 {
+  //Time
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -225,10 +239,23 @@ void lcdDisplay()
   display.print("m ");
   display.print(displaySeconds);
   display.print("s");
+
+  //Voltage 
   display.setCursor(0, 10);
   display.print("Voltage: ");
-  display.print(voltage, 2);
+  display.print(batteryVoltage, 2);
   display.print("V");
+  
+  // Add current and mAh display
+  display.setCursor(0, 20);
+  display.print("Current: ");
+  display.print(current, 2);
+  display.print(" A");
+  
+  display.setCursor(0, 30);
+  display.print(mAh);
+  display.print(" mAh");
+  
   display.display();
 }
 
@@ -238,13 +265,16 @@ void goodbyeLcd(unsigned long minutes, unsigned long seconds)
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-  display.print("Goodbye");
+  display.print("Test Complete");
   display.setCursor(0, 10);
   display.print("Elapsed Time: ");
   display.print(minutes);
   display.print("m ");
   display.print(seconds);
   display.print("s");
+  display.setCursor(0, 20);
+  display.print(mAh);
+    display.print(" mAh");
   display.display();
 }
 
@@ -287,10 +317,13 @@ void loop()
 
     if (currentMillis - previousDisplayMillis >= displayInterval)
     {
-      voltage = readVoltage(); // Update voltage before displaying
+      batteryVoltage = readVoltage(); // Update voltage before displaying
+      current = readCurrent(); // Implement readCurrent() to read current value
+      mAh += (current * (interval / 3600000.0)); // Update mAh based on current and time interval
       previousDisplayMillis = currentMillis;
       elapasedTime();
       lcdDisplay();
+
     }
 
     if (currentMillis - previousMillis >= interval) 
@@ -299,7 +332,7 @@ void loop()
       updateThingSpeak();
     }
 
-    if (voltage <= 3.0 && !requestMade) 
+    if (batteryVoltage <= battLow && !requestMade) 
     {
       makeRequest(PATH_NAME, queryString);
       requestMade = true;
