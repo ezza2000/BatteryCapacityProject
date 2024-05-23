@@ -2,25 +2,35 @@
 #include "secrets.h"
 #include <ThingSpeak.h>
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
+// Display Settings
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define SCREEN_ADDRESS 0x3C
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Pin Definitions
 #define BUTTON_PIN 2
+#define RELAY_PIN 14
 
-LiquidCrystal_I2C lcd(0x27, 20, 4); // set the LCD address to 0x27 for a 20 chars and 4 line display
+// WiFi Credentials from secrets.h
+char ssid[] = SECRET_SSID;
+char pass[] = SECRET_PASS;
 
-// please enter your sensitive data in the Secret tab
-char ssid[] = SECRET_SSID; // your network SSID (name)
-char pass[] = SECRET_PASS; // your network password (use for WPA, or use as key for WEP)
-int keyIndex = 0;       
 WiFiClient client;
 String myStatus = "";
 
-unsigned long myChannelNumber = SECRET_CH_ID; 
-const char* myWriteAPIKey = SECRET_WRITE_APIKEY; 
+unsigned long myChannelNumber = SECRET_CH_ID;
+const char* myWriteAPIKey = SECRET_WRITE_APIKEY;
 const char* myAPIKey = APIKEY;
 
+// IFTTT Settings
 char HOST_NAME[] = "maker.ifttt.com";
-String PATH_NAME = "/trigger/BatteryCapacityTestComplete/with/key/lv8ZbcFFWAfx6Vwizyzw1"; // change your EVENT-NAME and YOUR-KEY
+String PATH_NAME = "/trigger/BatteryCapacityTestComplete/with/key/lv8ZbcFFWAfx6Vwizyzw1";
 String queryString = "?value1=57&value2=25";
 bool requestMade = false;
 
@@ -30,54 +40,50 @@ unsigned long displaySeconds = 0;
 
 float voltage = 4.2; // Initial voltage value
 unsigned long previousMillis = 0; // Store the last time the voltage was updated
-const long interval = 30000; // Interval at which to update ThingSpeak (1 minute)
+const long interval = 20000; // Interval at which to update ThingSpeak (20 secs)
 unsigned long previousDisplayMillis = 0; // Store the last time the display was updated
 const long displayInterval = 1000; // Interval at which to update the display (1 second)
 
 bool buttonPressed = false;
+float valPot; // Variable to store the analog value read
 
 void setup() 
 {
-  // Initialize the button pin as an input 
-  pinMode(BUTTON_PIN, INPUT); 
-  // initialize WiFi connection
+  pinMode(BUTTON_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW); // Ensure the relay is off initially
+
+  // Initialize WiFi connection
   WiFi.begin(ssid, pass);
+  
   // Initialize the I2C bus
   Wire.begin();
-  // On esp8266 you can select SCL and SDA pins using Wire.begin(D4, D3);
-  // For Wemos / Lolin D1 Mini Pro and the Ambient Light shield use
-  // Wire.begin(D2, D1);                  v
-
+  
   Serial.begin(9600);
   while (!Serial);
 
-  // connect to web server on port 80:
-  if (client.connect(HOST_NAME, 80)) 
+  // Initialize OLED Display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) 
   {
-    // if connected:
-    Serial.println("Connected to server");
-  }
-  else // if not connected:
-  {
-    Serial.println("connection failed");
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);
   }
 
-  // initialize the lcd 
-  lcd.init();                     
-  // Print a message to the LCD.
-  lcd.backlight();
+  display.display();
+  delay(2000); // Pause for 2 seconds
+  display.clearDisplay();
+
+  // Display the initial message
+  helloLcd();
 
   // Clear ThingSpeak channel data before starting a new test
   clearThingSpeakChannel();
 
-  // Record the start time of the test
-  startMillis = millis();
-
   ThingSpeak.begin(client);  // Initialize ThingSpeak 
 }
+
 void clearThingSpeakChannel()
 {
-  // Clear the ThingSpeak channel data
   if (client.connect("api.thingspeak.com", 80)) 
   {
     Serial.println("Connected to ThingSpeak API");
@@ -105,7 +111,6 @@ void clearThingSpeakChannel()
       Serial.print(c);
     }
 
-    // Close connection
     client.stop();
     Serial.println();
     Serial.println("ThingSpeak channel cleared.");
@@ -118,15 +123,17 @@ void clearThingSpeakChannel()
 
 void makeRequest(String path, String query) 
 {
-  // Send HTTP request
-  if (client.connect(HOST_NAME, 80)) {
+  if (client.connect(HOST_NAME, 80)) 
+  {
     Serial.println("Connected to server");
     client.print("GET " + path + query + " HTTP/1.1\r\n");
     client.print("Host: " + String(HOST_NAME) + "\r\n");
     client.print("Connection: close\r\n\r\n");
     unsigned long timeout = millis();
-    while (client.available() == 0) {
-      if (millis() - timeout > 5000) { // 5-second timeout
+    while (client.available() == 0) 
+    {
+      if (millis() - timeout > 5000) 
+      {
         Serial.println("Timeout occurred while waiting for response");
         client.stop();
         return;
@@ -139,7 +146,6 @@ void makeRequest(String path, String query)
     return;
   }
 
-  // Read response from server
   while (client.connected()) 
   {
     if (client.available()) 
@@ -149,7 +155,6 @@ void makeRequest(String path, String query)
     }
   }
 
-  // Close connection
   client.stop();
   Serial.println();
   Serial.println("Disconnected");
@@ -167,40 +172,39 @@ void elapasedTime()
 
 float readVoltage() 
 {
-  // Hypothetical voltage drop simulation
-  if (voltage > 3.0) 
-  { // Ensure voltage does not drop below 3.0V
-    voltage -= 0.10; // Decrease voltage by 0.01V per call
-  }
-  return voltage;
+  float dividVolt = readPotent();
+  float actualVolt = dividVolt * 2;
+  return actualVolt;
 }
 
-void voltageDrop()
+float readPotent() 
 {
-  // Connect or reconnect to WiFi
+  valPot = analogRead(A1);
+  Serial.print("The digital value is: ");
+  float dividVolt = valPot / 313.0; // Ensure float division
+  Serial.println(dividVolt);
+  return dividVolt;
+}
+
+void updateThingSpeak()
+{
   if(WiFi.status() != WL_CONNECTED)
   {
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(SECRET_SSID);
     while(WiFi.status() != WL_CONNECTED)
     {
-      WiFi.begin(ssid, pass);  // Connect to WPA/WPA2 network. Change this line if using open or WEP network
+      WiFi.begin(ssid, pass);
       Serial.print(".");
       delay(5000);     
     } 
     Serial.println("\nConnected.");
   }
 
-  // Read the voltage
   voltage = readVoltage();
-
-  // set the fields with the values
   ThingSpeak.setField(1, voltage);
-
-  // set the status
   ThingSpeak.setStatus(myStatus);
   
-  // write to the ThingSpeak channel 
   int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
   if(x == 200){
     Serial.println("Channel update successful.");
@@ -212,68 +216,95 @@ void voltageDrop()
 
 void lcdDisplay()
 {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Time: ");
-  lcd.print(displayMinutes);
-  lcd.print("m ");
-  lcd.print(displaySeconds);
-  lcd.print("s ");
-  lcd.setCursor(0, 2);
-  lcd.print("Voltage: ");
-  lcd.print(voltage, 2);
-  lcd.print("V");
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Time: ");
+  display.print(displayMinutes);
+  display.print("m ");
+  display.print(displaySeconds);
+  display.print("s");
+  display.setCursor(0, 10);
+  display.print("Voltage: ");
+  display.print(voltage, 2);
+  display.print("V");
+  display.display();
 }
 
-void goodbyeLcd()
+void goodbyeLcd(unsigned long minutes, unsigned long seconds)
 {
-  lcd.clear();
-  lcd.setCursor(6, 1); 
-  lcd.print("Goodbye");
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Goodbye");
+  display.setCursor(0, 10);
+  display.print("Elapsed Time: ");
+  display.print(minutes);
+  display.print("m ");
+  display.print(seconds);
+  display.print("s");
+  display.display();
 }
 
 void helloLcd()
 {
-  lcd.setCursor(0, 0); 
-  lcd.print("Press Button To Start");
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Press Button To Start");
+  display.display();
+}
+
+void relayOn()
+{
+  digitalWrite(RELAY_PIN, HIGH);
+  Serial.println("Relay turned on");
+}
+
+void relayOff()
+{
+  digitalWrite(RELAY_PIN, LOW);
+  Serial.println("Relay turned off");
 }
 
 void loop() 
 {
-// Check if the button is pressed to start the program
   if (!buttonPressed && digitalRead(BUTTON_PIN) == LOW) 
   {
     Serial.println("Button pressed");
     buttonPressed = true;
-    delay(1000); // Delay to allow for button debounce
+    delay(1000);
+    startMillis = millis();
+    relayOn();
   }
   
-  // If the button is pressed, start the program
   if (buttonPressed)
   {
     unsigned long currentMillis = millis();
 
-    // Update elapsed time and display every second
     if (currentMillis - previousDisplayMillis >= displayInterval)
     {
+      voltage = readVoltage(); // Update voltage before displaying
       previousDisplayMillis = currentMillis;
       elapasedTime();
       lcdDisplay();
     }
 
-    // Update voltage and ThingSpeak every 10 seconds
     if (currentMillis - previousMillis >= interval) 
     {
       previousMillis = currentMillis;
-      voltageDrop();
+      updateThingSpeak();
     }
 
-    // Stop the process if the voltage is 3.0V or below
     if (voltage <= 3.0 && !requestMade) 
     {
       makeRequest(PATH_NAME, queryString);
-      requestMade = true; // Ensure the request is only made once
-      goodbyeLcd(); // Display goodbye message
+      requestMade = true;
+      goodbyeLcd(displayMinutes, displaySeconds);
+      relayOff();
       while (true); // Stop the loop
     }
   }
