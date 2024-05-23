@@ -47,11 +47,10 @@ bool buttonPressed = false;
 float valPot; // Variable to store the analog value read
 float mAh = 0.0;
 float batteryVoltage = 0.0;
-float shuntRes = 1.0; // In Ohms – Shunt resistor resistance
-float voltRef = 4.71; // Reference voltage (probe your 5V pin)
+float shuntRes = 2.5; // In Ohms – Shunt resistor resistance
 float current = 0.0;
-float shuntVolt = 0.0;
 float battLow = 3.0;
+float startingVoltage;
 
 void setup() 
 {
@@ -78,7 +77,9 @@ void setup()
   display.display();
   delay(2000); // Pause for 2 seconds
   display.clearDisplay();
-
+  batteryVoltage = readVoltage(); 
+  startingVoltage = batteryVoltage;
+  
   // Display the initial message
   helloLcd();
 
@@ -185,9 +186,10 @@ float readVoltage()
 
 float readCurrent()
 {
-  // Implement your current reading logic here
-  // For now, we return a dummy value
-  return 0.5; // Example current value in Amperes
+  float batteryVolt = readVoltage(); // Get the battery voltage
+  shuntRes = 2.5; // Load resistor in ohms
+  float current = batteryVolt / shuntRes; // Calculate current using Ohm's Law
+  return current;
 }
 
 float readPotent() 
@@ -253,6 +255,7 @@ void lcdDisplay()
   display.print(" A");
   
   display.setCursor(0, 30);
+  display.print("Capacity: ");
   display.print(mAh);
   display.print(" mAh");
   
@@ -273,8 +276,14 @@ void goodbyeLcd(unsigned long minutes, unsigned long seconds)
   display.print(seconds);
   display.print("s");
   display.setCursor(0, 20);
+  display.print("Capacity: ");
   display.print(mAh);
-    display.print(" mAh");
+  display.print(" mAh");
+  display.setCursor(0, 30);
+  display.print("Starting Voltage: ");
+  display.setCursor(0, 40);
+  display.print(startingVoltage);
+  display.print("V");
   display.display();
 }
 
@@ -285,6 +294,10 @@ void helloLcd()
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.print("Press Button To Start");
+  display.setCursor(0, 10);
+  display.print("Voltage: ");
+  display.print(batteryVoltage, 2);
+  display.print("V");
   display.display();
 }
 
