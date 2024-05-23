@@ -321,6 +321,7 @@ void loop()
     buttonPressed = true;
     delay(1000);
     startMillis = millis();
+    updateThingSpeak();
     relayOn();
   }
   
@@ -332,7 +333,7 @@ void loop()
     {
       batteryVoltage = readVoltage(); // Update voltage before displaying
       current = readCurrent(); // Implement readCurrent() to read current value
-      mAh += (current * (interval / 3600000.0)); // Update mAh based on current and time interval
+      mAh += (current / 3.6); // Update mAh based on current and time interval
       previousDisplayMillis = currentMillis;
       elapasedTime();
       lcdDisplay();
